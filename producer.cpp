@@ -8,6 +8,9 @@
 #include <unistd.h>    // for ftruncate
 #include <time.h>
 #include <random>
+#include <cctype>
+#include <signal.h>
+#include <cerrno>
 #define SHM_NAME "/shared_buffer"
 #define SEMAPHORE_S "/producerConsumer_s" 
 #define SEMAPHORE_N "/producerConsumer_n"
@@ -17,6 +20,10 @@ struct commodity {
     double price;};
 struct shared_memory {
     int in,out;};
+volatile sig_atomic_t stop = 0;
+void handle_signal(int){
+    stop = 1;   
+}
 void producerLog (const char* commodity_name,const char* message ){
     struct timespec t;
     clock_gettime(CLOCK_REALTIME, &t);
@@ -37,6 +44,9 @@ int main(int argc, char* argv[]) {
     }
     char commodity_name[11];
     strcpy(commodity_name, argv[1]);
+    for (int i = 0;commodity_name[i] != '\0'; i++) {
+        commodity_name[i] = toupper(commodity_name[i]);
+    }
     double mean    = atof(argv[2]); //atof(): convert string to double
     double std_dev = atof(argv[3]);
     int sleep_length = atoi(argv[4]); //atoi(): convert string to int
@@ -72,18 +82,49 @@ int main(int argc, char* argv[]) {
     sem_t* e = sem_open(SEMAPHORE_E, O_CREAT, 0666, buffer_size);
     if (s == SEM_FAILED || n == SEM_FAILED || e == SEM_FAILED) {
         std::cerr << "sem_open failed" << std::endl;
+        if (s != SEM_FAILED) sem_close(s);
+        if (n != SEM_FAILED) sem_close(n);
+        if (e != SEM_FAILED) sem_close(e);
+        munmap(ptr, total_size);
         return 1;
     }
     std::default_random_engine generator;
     std::normal_distribution<double> distribution(mean, std_dev);
     char log_message[100];
-    while (true) {
+    struct sigaction sa;
+    sa.sa_handler = handle_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    while (!stop) {
         double price = distribution(generator);
         sprintf(log_message, "generating a new value %.2f", price);
         producerLog(commodity_name, log_message);
-        sem_wait(e); 
+        if (sem_wait(e) == -1) {
+            if (errno == EINTR && stop) break; // Exit the loop if interrupted by a signal
+            if (errno == EINTR) continue; // Retry if interrupted by a signal
+            perror("sem_wait e failed");
+            break;
+        }
+        if (stop) {
+            sem_post(e); // Release the empty slot semaphore if we are stopping
+            break;
+        }
         producerLog(commodity_name, "trying to get mutex on shared buffer");
-        sem_wait(s); // critical section start
+        if (sem_wait(s) == -1){
+            sem_post(e); 
+            if (errno == EINTR && stop) break; // Exit the loop if interrupted by a signal
+            if (errno == EINTR) continue; // Retry if interrupted by a signal
+            perror("sem_wait s failed");
+            break;
+        }
+        if (stop) {
+            sem_post(s); 
+            sem_post(e); 
+            break;
+        }
+        // critical section start
         sprintf(log_message, "placing %.2f on shared buffer", price);
         producerLog(commodity_name, log_message);
         strcpy(buffer[shared_data->in].name, commodity_name);
@@ -95,4 +136,8 @@ int main(int argc, char* argv[]) {
         producerLog(commodity_name, log_message);
         usleep(sleep_length * 1000); // convert milliseconds to microseconds
     }
+    sem_close(s);
+    sem_close(n);
+    sem_close(e);
+    munmap(ptr, total_size);
 }

@@ -8,6 +8,8 @@
 #include <map>
 #include <string>
 #include <cstdio>  // for printf()
+#include <signal.h>
+#include <cerrno>
 #define SHM_NAME "/shared_buffer"
 #define SEMAPHORE_S "/producerConsumer_s" 
 #define SEMAPHORE_N "/producerConsumer_n"
@@ -23,6 +25,10 @@ struct prices {
     double current_average = 0.0;
     double previous_price = 0.0;
     double previous_average = 0.0;};
+volatile sig_atomic_t stop = 0;
+void handle_signal(int){
+    stop = 1;   
+}
 void print_price (double current_price, double current_average, double previous_price, double previous_average)
 {
     if (current_price > previous_price) printf("\033[32m%7.2lf↑\033[0m", current_price);
@@ -78,15 +84,45 @@ int main(int argc,char* argv[]){
     sem_t* e = sem_open(SEMAPHORE_E, O_CREAT, 0666, buffer_size);
     if (s == SEM_FAILED || n == SEM_FAILED || e == SEM_FAILED) {
         std::cerr << "sem_open failed" << std::endl;
+        if (s != SEM_FAILED) sem_close(s);
+        if (n != SEM_FAILED) sem_close(n);
+        if (e != SEM_FAILED) sem_close(e);
+        munmap(ptr, total_size);
         return 1;
     }
+    struct sigaction sa;
+    sa.sa_handler = handle_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
     std::map<std::string, prices> commodity_prices={{"ALUMINIUM",{}},{"COPPER",{}},{"COTTON",{}}
     ,{"CRUDEOIL",{}},{"GOLD",{}},{"LEAD",{}},{"MENTHAOIL",{}},{"NATURALGAS",{}},{"NICKEL",{}},
     {"SILVER",{}},{"ZINC",{}}};
     print_table(commodity_prices);
-    while (true){
-        sem_wait(n); 
-        sem_wait(s); // critical section start
+    while (!stop) {
+        if (sem_wait(n) == -1) {
+            if (errno == EINTR && stop) break;
+            if (errno == EINTR) continue; 
+            perror("sem_wait n failed");
+            break;
+        }
+        if (stop) {
+            sem_post(n); 
+            break;
+        }
+        if (sem_wait(s) == -1){
+            sem_post(n); 
+            if (errno == EINTR && stop) break; 
+            if (errno == EINTR) continue; 
+            perror("sem_wait s failed");
+            break;
+        }
+        if (stop) {
+            sem_post(s); 
+            sem_post(n); 
+            break;}
+         // critical section start
         commodity item = buffer[shared_data->out];
         shared_data->out = (shared_data->out + 1) % buffer_size;
         sem_post(s); // critical section end
@@ -105,4 +141,12 @@ int main(int argc,char* argv[]){
         commodity_price.current_average = sum / size ;
         print_table(commodity_prices);
     }
+    sem_close(s);
+    sem_close(n);
+    sem_close(e);   
+    munmap(ptr, total_size);
+    shm_unlink(SHM_NAME);
+    sem_unlink(SEMAPHORE_S);
+    sem_unlink(SEMAPHORE_N);
+    sem_unlink(SEMAPHORE_E);
 }   
