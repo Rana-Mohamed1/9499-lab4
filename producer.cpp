@@ -67,10 +67,10 @@ int main(int argc, char* argv[]) {
     close(shm_fd);
     shared_memory* shared_data = static_cast<shared_memory*>(ptr);
     commodity* buffer = (commodity*)(shared_data + 1);
-    sem_t* sem_s = sem_open(SEMAPHORE_S, O_CREAT, 0666, 1);
-    sem_t* sem_n = sem_open(SEMAPHORE_N, O_CREAT, 0666, 0);
-    sem_t* sem_e = sem_open(SEMAPHORE_E, O_CREAT, 0666, buffer_size);
-    if (sem_s == SEM_FAILED || sem_n == SEM_FAILED || sem_e == SEM_FAILED) {
+    sem_t* s = sem_open(SEMAPHORE_S, O_CREAT, 0666, 1);
+    sem_t* n = sem_open(SEMAPHORE_N, O_CREAT, 0666, 0);
+    sem_t* e = sem_open(SEMAPHORE_E, O_CREAT, 0666, buffer_size);
+    if (s == SEM_FAILED || n == SEM_FAILED || e == SEM_FAILED) {
         std::cerr << "sem_open failed" << std::endl;
         return 1;
     }
@@ -81,16 +81,16 @@ int main(int argc, char* argv[]) {
         double price = distribution(generator);
         sprintf(log_message, "generating a new value %.2f", price);
         producerLog(commodity_name, log_message);
-        sem_wait(sem_e); 
+        sem_wait(e); 
         producerLog(commodity_name, "trying to get mutex on shared buffer");
-        sem_wait(sem_s); // critical section start
+        sem_wait(s); // critical section start
         sprintf(log_message, "placing %.2f on shared buffer", price);
         producerLog(commodity_name, log_message);
         strcpy(buffer[shared_data->in].name, commodity_name);
         buffer[shared_data->in].price = price;
         shared_data->in = (shared_data->in + 1) % buffer_size;
-        sem_post(sem_s); // critical section end
-        sem_post(sem_n);
+        sem_post(s); // critical section end
+        sem_post(n);
         sprintf(log_message, "sleeping for %d ms", sleep_length);
         producerLog(commodity_name, log_message);
         usleep(sleep_length * 1000); // convert milliseconds to microseconds
