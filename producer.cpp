@@ -17,7 +17,7 @@ struct commodity {
     double price;};
 struct shared_memory {
     int in,out;};
-void producerLog (char* commodity_name,char* message ){
+void producerLog (const char* commodity_name,const char* message ){
     struct timespec t;
     clock_gettime(CLOCK_REALTIME, &t);
     struct tm* time = localtime(&t.tv_sec);

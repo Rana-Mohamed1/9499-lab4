@@ -1,8 +1,9 @@
 all: producer consumer
+#-pthread for semaphores , -lrt real time library shm_open()
 producer: producer.cpp
-	g++ -o producer producer.cpp -lrt -pthread  //-pthread for semaphores
+	g++ -o producer producer.cpp -lrt -pthread  
 consumer: consumer.cpp
-	g++ -o consumer consumer.cpp -lrt -pthread //-lrt real time library shm_open()
+	g++ -o consumer consumer.cpp -lrt -pthread 
 	
 clean:
 	rm -f producer consumer	
