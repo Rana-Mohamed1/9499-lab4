@@ -112,9 +112,10 @@ int main(int argc,char* argv[]){
             break;
         }
         if (sem_wait(s) == -1){
+            int err = errno;
             sem_post(n); 
-            if (errno == EINTR && stop) break; 
-            if (errno == EINTR) continue; 
+            if (err == EINTR && stop) break; 
+            if (err== EINTR) continue; 
             perror("sem_wait s failed");
             break;
         }

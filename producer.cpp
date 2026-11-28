@@ -102,20 +102,21 @@ int main(int argc, char* argv[]) {
         sprintf(log_message, "generating a new value %.2f", price);
         producerLog(commodity_name, log_message);
         if (sem_wait(e) == -1) {
-            if (errno == EINTR && stop) break; // Exit the loop if interrupted by a signal
-            if (errno == EINTR) continue; // Retry if interrupted by a signal
+            if (errno == EINTR && stop) break; 
+            if (errno == EINTR) continue; 
             perror("sem_wait e failed");
             break;
         }
         if (stop) {
-            sem_post(e); // Release the empty slot semaphore if we are stopping
+            sem_post(e); 
             break;
         }
         producerLog(commodity_name, "trying to get mutex on shared buffer");
         if (sem_wait(s) == -1){
+            int err = errno;
             sem_post(e); 
-            if (errno == EINTR && stop) break; // Exit the loop if interrupted by a signal
-            if (errno == EINTR) continue; // Retry if interrupted by a signal
+            if (err == EINTR && stop) break; 
+            if (err== EINTR) continue; 
             perror("sem_wait s failed");
             break;
         }
